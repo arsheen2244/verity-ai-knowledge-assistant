@@ -1,0 +1,375 @@
+{
+  "_readme": "Questions about MySQL_Handbook.pdf. Labeled questions (must_contain = phrase copied from the passage that answers it) feed eval/retrieval_eval.py. Questions with no label are deliberately NOT answerable from the document: retrieval_eval skips them, run_eval uses them to check the model says it does not know instead of hallucinating. Phrases were verified against pypdf's extraction of the PDF.",
+  "questions": [
+    {
+      "question": "What is a database in MySQL and how does the handbook compare it to a folder?",
+      "ground_truth": "A database is a container that stores related data in an organized way.",
+      "must_contain": [
+        "stores related data in an organized way"
+      ]
+    },
+    {
+      "question": "What SQL command deletes an entire database and all its tables?",
+      "ground_truth": "DROP DATABASE startersql; deletes the whole database and everything in it.",
+      "must_contain": [
+        "DROP DATABASE startersql"
+      ]
+    },
+    {
+      "question": "What does the ENUM data type do?",
+      "ground_truth": "ENUM is a string object whose value is chosen from a list of permitted values, e.g. gender ENUM('Male','Female','Other').",
+      "must_contain": [
+        "string object with a value chosen from a list"
+      ]
+    },
+    {
+      "question": "What does DECIMAL(10, 2) store?",
+      "ground_truth": "Exact numeric data, where 10 is the total number of digits and 2 the digits after the decimal point; useful for financial data.",
+      "must_contain": [
+        "exact numeric data"
+      ]
+    },
+    {
+      "question": "What does the AUTO_INCREMENT constraint do?",
+      "ground_truth": "It automatically generates a unique number for each new row.",
+      "must_contain": [
+        "automatically generates a unique number for each row"
+      ]
+    },
+    {
+      "question": "How do I rename a table in MySQL?",
+      "ground_truth": "Use RENAME TABLE old_name TO new_name, e.g. RENAME TABLE users TO customers.",
+      "must_contain": [
+        "RENAME TABLE users TO customers"
+      ]
+    },
+    {
+      "question": "How do I add a new column to an existing table?",
+      "ground_truth": "Use ALTER TABLE ... ADD COLUMN, e.g. ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE.",
+      "must_contain": [
+        "ADD COLUMN is_active BOOLEAN"
+      ]
+    },
+    {
+      "question": "How can I move a column to the first position of a table?",
+      "ground_truth": "Use ALTER TABLE ... MODIFY COLUMN ... FIRST.",
+      "must_contain": [
+        "VARCHAR(100) FIRST"
+      ]
+    },
+    {
+      "question": "Why is it better to specify column names when inserting rows?",
+      "ground_truth": "It is safer and more readable, and is the best practice, especially if the table structure changes later.",
+      "must_contain": [
+        "safer and more readable"
+      ]
+    },
+    {
+      "question": "How do I insert several rows with a single statement?",
+      "ground_truth": "Provide multiple value tuples in one INSERT INTO ... VALUES statement, which is more efficient than inserting one by one.",
+      "must_contain": [
+        "Insert Multiple Rows at Once"
+      ]
+    },
+    {
+      "question": "How do I select users whose name starts with the letter A?",
+      "ground_truth": "Use LIKE 'A%'.",
+      "must_contain": [
+        "Starts with A"
+      ]
+    },
+    {
+      "question": "How do I skip the first 5 rows and return the next 10 rows?",
+      "ground_truth": "Use LIMIT 10 OFFSET 5, or LIMIT 5, 10.",
+      "must_contain": [
+        "LIMIT 10 OFFSET 5"
+      ]
+    },
+    {
+      "question": "How do I find rows where a column has no value?",
+      "ground_truth": "Use IS NULL (and IS NOT NULL for the opposite).",
+      "must_contain": [
+        "date_of_birth IS NULL"
+      ]
+    },
+    {
+      "question": "What happens if I run UPDATE without a WHERE clause?",
+      "ground_truth": "It updates every row in the table, so be very careful.",
+      "must_contain": [
+        "updates every row in the table"
+      ]
+    },
+    {
+      "question": "What does the handbook recommend before running a DELETE?",
+      "ground_truth": "Run a SELECT with the same WHERE clause first to confirm which rows will be affected, and back up important data.",
+      "must_contain": [
+        "Consider running a SELECT with the same WHERE"
+      ]
+    },
+    {
+      "question": "What is the difference between DELETE FROM users and DROP TABLE users?",
+      "ground_truth": "DELETE FROM users removes all rows but keeps the table structure; DROP TABLE removes the structure and data permanently.",
+      "must_contain": [
+        "removes the table structure and all data permanently"
+      ]
+    },
+    {
+      "question": "How do I add a CHECK constraint to restrict dates of birth?",
+      "ground_truth": "ALTER TABLE users ADD CONSTRAINT chk_dob CHECK (date_of_birth > '2000-01-01').",
+      "must_contain": [
+        "ADD CONSTRAINT chk_dob CHECK"
+      ]
+    },
+    {
+      "question": "How do I change an existing column so it cannot be NULL?",
+      "ground_truth": "ALTER TABLE users MODIFY COLUMN name VARCHAR(100) NOT NULL.",
+      "must_contain": [
+        "Change an existing column to NOT NULL"
+      ]
+    },
+    {
+      "question": "Which MySQL function counts rows?",
+      "ground_truth": "COUNT(), e.g. SELECT COUNT(*) FROM users.",
+      "must_contain": [
+        "Count total number of users"
+      ]
+    },
+    {
+      "question": "How can I calculate a user's age in years?",
+      "ground_truth": "Use TIMESTAMPDIFF(YEAR, date_of_birth, CURDATE()).",
+      "must_contain": [
+        "TIMESTAMPDIFF(YEAR"
+      ]
+    },
+    {
+      "question": "How do I combine a name and an email into a single string?",
+      "ground_truth": "Use CONCAT(), e.g. CONCAT(name, ' <', email, '>').",
+      "must_contain": [
+        "Combine name and email"
+      ]
+    },
+    {
+      "question": "What is the default mode for transactions in MySQL and how do I turn it off?",
+      "ground_truth": "MySQL runs in AutoCommit mode by default; turn it off with SET autocommit = 0.",
+      "must_contain": [
+        "operates in AutoCommit mode"
+      ]
+    },
+    {
+      "question": "How do I undo changes made in a transaction?",
+      "ground_truth": "Use ROLLBACK, which undoes all changes since the last COMMIT or ROLLBACK.",
+      "must_contain": [
+        "undoes all changes since the last COMMIT"
+      ]
+    },
+    {
+      "question": "How is a PRIMARY KEY different from a UNIQUE constraint?",
+      "ground_truth": "A table can have only one primary key, which cannot be NULL; UNIQUE can be used on several columns and allows NULLs.",
+      "must_contain": [
+        "How Is PRIMARY KEY Different from UNIQUE"
+      ]
+    },
+    {
+      "question": "How do I drop a UNIQUE constraint on the email column?",
+      "ground_truth": "ALTER TABLE users DROP INDEX email.",
+      "must_contain": [
+        "DROP INDEX email"
+      ]
+    },
+    {
+      "question": "How do I change the starting value of AUTO_INCREMENT?",
+      "ground_truth": "ALTER TABLE users AUTO_INCREMENT = 1000.",
+      "must_contain": [
+        "change the starting value of"
+      ]
+    },
+    {
+      "question": "How do I create a foreign key that links addresses to users?",
+      "ground_truth": "Add FOREIGN KEY (user_id) REFERENCES users(id) in the addresses table.",
+      "must_contain": [
+        "REFERENCES users(id)"
+      ]
+    },
+    {
+      "question": "What does ON DELETE CASCADE do?",
+      "ground_truth": "It automatically deletes the related rows in the child table when the parent row is deleted.",
+      "must_contain": [
+        "Deletes all related rows in child table"
+      ]
+    },
+    {
+      "question": "What is the default ON DELETE behavior of a foreign key?",
+      "ground_truth": "RESTRICT: it prevents deleting the parent row if child rows exist.",
+      "must_contain": [
+        "Prevents deletion of parent if child exists"
+      ]
+    },
+    {
+      "question": "What does an INNER JOIN return?",
+      "ground_truth": "Only the rows that match in both tables.",
+      "must_contain": [
+        "Returns only the matching rows from both tables"
+      ]
+    },
+    {
+      "question": "What does a LEFT JOIN return when there is no match on the right?",
+      "ground_truth": "All rows from the left table, with NULLs for columns of the right table.",
+      "must_contain": [
+        "Returns all rows from the left table"
+      ]
+    },
+    {
+      "question": "What is the difference between UNION and UNION ALL?",
+      "ground_truth": "UNION removes duplicates; UNION ALL keeps them.",
+      "must_contain": [
+        "UNION ALL keeps duplicates"
+      ]
+    },
+    {
+      "question": "What rules must the SELECT statements in a UNION follow?",
+      "ground_truth": "They must have the same number of columns with compatible data types.",
+      "must_contain": [
+        "Rules of UNION"
+      ]
+    },
+    {
+      "question": "What is a Self JOIN and when is it used?",
+      "ground_truth": "A regular join where the table is joined with itself, e.g. users and the user who referred them.",
+      "must_contain": [
+        "table is joined with itself"
+      ]
+    },
+    {
+      "question": "Does a MySQL view store its own data?",
+      "ground_truth": "No, a view is a virtual table based on a SELECT query and always reflects the current data of the base tables.",
+      "must_contain": [
+        "does not store data itself"
+      ]
+    },
+    {
+      "question": "How do I delete a view?",
+      "ground_truth": "DROP VIEW view_name, e.g. DROP VIEW high_salary_users.",
+      "must_contain": [
+        "DROP VIEW high_salary_users"
+      ]
+    },
+    {
+      "question": "How do I see which indexes exist on a table?",
+      "ground_truth": "SHOW INDEXES FROM users.",
+      "must_contain": [
+        "SHOW INDEXES FROM users"
+      ]
+    },
+    {
+      "question": "Why does the order of columns matter in a multi-column index?",
+      "ground_truth": "The index works efficiently when the filter includes the first column; filtering only on the second column may not use it effectively.",
+      "must_contain": [
+        "Index Order Matters"
+      ]
+    },
+    {
+      "question": "What are the downsides of adding indexes?",
+      "ground_truth": "They consume extra disk space and slightly slow down INSERT, UPDATE and DELETE.",
+      "must_contain": [
+        "Indexes consume extra disk space"
+      ]
+    },
+    {
+      "question": "How do I find users who earn more than the average salary?",
+      "ground_truth": "Use a scalar subquery: WHERE salary > (SELECT AVG(salary) FROM users).",
+      "must_contain": [
+        "Scalar Subquery Example"
+      ]
+    },
+    {
+      "question": "What is the difference between WHERE and HAVING?",
+      "ground_truth": "WHERE filters rows before grouping; HAVING filters groups after aggregation and can use aggregate functions.",
+      "must_contain": [
+        "HAVING is used after groups are formed"
+      ]
+    },
+    {
+      "question": "How do I get subtotals and a grand total with GROUP BY?",
+      "ground_truth": "Add WITH ROLLUP to the GROUP BY clause.",
+      "must_contain": [
+        "GROUP BY gender WITH ROLLUP"
+      ]
+    },
+    {
+      "question": "Why must I change the DELIMITER when creating a stored procedure?",
+      "ground_truth": "Because statements inside the procedure also end with a semicolon, which would confuse MySQL, so a temporary delimiter like $$ is used.",
+      "must_contain": [
+        "Why Change the Delimiter"
+      ]
+    },
+    {
+      "question": "How do I run a stored procedure?",
+      "ground_truth": "Use CALL procedure_name(...), e.g. CALL AddUser(...).",
+      "must_contain": [
+        "Calling the Procedure"
+      ]
+    },
+    {
+      "question": "How do I remove a stored procedure?",
+      "ground_truth": "DROP PROCEDURE IF EXISTS AddUser.",
+      "must_contain": [
+        "DROP PROCEDURE IF EXISTS AddUser"
+      ]
+    },
+    {
+      "question": "What is a trigger in MySQL?",
+      "ground_truth": "A stored program that runs automatically when an INSERT, UPDATE or DELETE happens on a table.",
+      "must_contain": [
+        "automatically executed"
+      ]
+    },
+    {
+      "question": "What do NEW and OLD refer to inside a trigger?",
+      "ground_truth": "NEW refers to the new row (INSERT/UPDATE) and OLD refers to the old row (UPDATE/DELETE).",
+      "must_contain": [
+        "Refers to the old row"
+      ]
+    },
+    {
+      "question": "What is the difference between TRUNCATE and DELETE?",
+      "ground_truth": "TRUNCATE removes all rows quickly but keeps the table structure; it is faster than DELETE FROM and cannot be rolled back in most cases.",
+      "must_contain": [
+        "Faster than DELETE FROM users"
+      ]
+    },
+    {
+      "question": "What is the difference between CHANGE and MODIFY when altering a column?",
+      "ground_truth": "CHANGE can rename a column and change its type; MODIFY only changes the data type.",
+      "must_contain": [
+        "CHANGE: Rename and change datatype"
+      ]
+    },
+    {
+      "question": "What does the _ wildcard match in a LIKE pattern?",
+      "ground_truth": "A single character.",
+      "must_contain": [
+        "Matches a single"
+      ]
+    },
+    {
+      "question": "How do I create a stored function (CREATE FUNCTION) that returns a value in MySQL?",
+      "ground_truth": "NOT IN THE DOCUMENT: the handbook covers stored procedures, not stored functions. A good answer says it is not covered."
+    },
+    {
+      "question": "What is a FULL OUTER JOIN and how do I write one in MySQL?",
+      "ground_truth": "NOT IN THE DOCUMENT: only INNER, LEFT, RIGHT and self joins are covered."
+    },
+    {
+      "question": "How do I use window functions like ROW_NUMBER() or RANK()?",
+      "ground_truth": "NOT IN THE DOCUMENT: window functions are not covered."
+    },
+    {
+      "question": "How do I set up MySQL replication between two servers?",
+      "ground_truth": "NOT IN THE DOCUMENT: replication is not covered."
+    },
+    {
+      "question": "How do I install MySQL on macOS using Homebrew?",
+      "ground_truth": "NOT IN THE DOCUMENT: it only mentions the MySQL installer for Windows/macOS and apt for Ubuntu."
+    }
+  ]
+}

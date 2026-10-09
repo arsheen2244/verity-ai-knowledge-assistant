@@ -47,12 +47,14 @@ def test_ingest_and_retrieve(sample_txt_path):
 
     hits = store.search("How many days can I work remotely?", top_k=2)
     assert len(hits) > 0
-    assert "remote" in hits[0]["text"].lower() or "remote" in hits[0]["source"].lower() or True
+    assert "remote" in hits[0]["text"].lower()
 
 
 def test_answer_question_fallback_without_api_key(sample_txt_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # Force fallback mode even if your .env selects ollama/anthropic/openai.
+    monkeypatch.setenv("LLM_PROVIDER", "none")
     get_settings.cache_clear()
 
     result = answer_question("What is the home office reimbursement limit?")

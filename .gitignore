@@ -1,7 +1,25 @@
+# Secrets -- NEVER commit these
+.env
+*.key
+
+# Python environment / caches
 venv/
 .venv/
 __pycache__/
 *.pyc
-.env
+.pytest_cache/
+
+# Local vector database (rebuilt by ingesting documents)
 chroma_db/
+
+# Generated evaluation artifacts. Remove the lines below if you WANT to commit
+# your final reports as proof of results (recommended once you have verified them).
+eval/samples.json
+# eval/eval_report.md
+# eval/retrieval_report.md
+
+# Editor / OS
 .vscode/
+.idea/
+.DS_Store
+Thumbs.db

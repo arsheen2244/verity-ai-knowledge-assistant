@@ -1,271 +1,166 @@
 # Enterprise AI Knowledge Assistant
 
-A Retrieval-Augmented Generation (RAG) system for querying organizational
-documents in natural language, with traceable, cited answers.
+Ask questions about your own documents in plain English and get answers that cite the source file and page.
 
-Built to match this resume line — and to actually run:
-> Developed an Enterprise AI Knowledge Assistant using a RAG pipeline to
-> enable natural language querying of organizational documents. Implemented
-> document processing and semantic search with vector embeddings using
-> ChromaDB. Built LLM-based question answering with source citations using
-> Python and FastAPI.
+A Retrieval-Augmented Generation (RAG) system built with **FastAPI**, **ChromaDB** and a hybrid retrieval pipeline (dense vectors + BM25 + cross-encoder reranking). Retrieval quality is measured, not assumed: the repo includes a labeled evaluation set and the scripts that produced the numbers below.
 
-## Architecture
+![Answer with source citations](docs/ui-answer.png)
 
-```
-   .pdf/.docx/.txt
-         │
-         ▼
- [document_processor.py]  parse file -> raw text per page
-         │
-         ▼
-   [chunking.py]           recursive character split (800 chars, 120 overlap)
-         │
-         ▼
-   [embeddings.py]         local sentence-transformers model -> 384-d vector
-         │                 (falls back to offline hashing vectorizer if
-         │                  huggingface.co is unreachable)
-         ▼
-  [vector_store.py]        ChromaDB persistent collection (upsert)
-                            + invalidates the BM25 keyword index
+## What it does
 
+- Upload `.pdf`, `.docx`, `.txt` or `.md` files; they are parsed, chunked, embedded and indexed.
+- Ask a question; the system retrieves the most relevant chunks and has an LLM answer **only from that context**, citing `(source, page)`.
+- If the documents don't contain the answer, the model is instructed to say so instead of guessing.
+- Works with a free LLM (Groq, local Ollama), OpenAI or Anthropic. With no key at all it still runs and returns the raw retrieved context.
 
-          user question
-                │
-                ▼
-  [vector_store.py]  hybrid search:
-                        1. dense search (ChromaDB, top hybrid_candidate_k)
-                        2. BM25 keyword search (keyword_search.py, same k)
-                        3. Reciprocal Rank Fusion merges both lists
-                        4. cross-encoder reranks the merged shortlist
-                           (reranker.py) down to top_k
-                │
-                ▼
-     [llm.py]        build cited-answer prompt -> Anthropic or OpenAI
-                │        (or raw-context fallback if no API key set)
-                ▼
-  [rag_engine.py]     assemble {answer, sources, retrieved_chunks}
-                │
-                ▼
-     [main.py]        FastAPI: POST /api/ingest, POST /api/query
+## How it works
 
+```mermaid
+flowchart LR
+    A[PDF / DOCX / TXT] --> B[Parse per page]
+    B --> C[Recursive chunking<br/>800 chars, 120 overlap]
+    C --> D[Embed<br/>all-MiniLM-L6-v2]
+    D --> E[(ChromaDB)]
 
-          eval/run_eval.py (separate, offline, run manually)
-                │
-                ▼
-   runs eval/eval_questions.json through the REAL pipeline above,
-   scores answers with Ragas (Faithfulness, Answer Relevancy,
-   Context Precision), writes eval/eval_report.md
+    Q[Question] --> F[Dense search]
+    Q --> G[BM25 keyword search]
+    E --> F
+    E --> G
+    F --> H[Reciprocal Rank Fusion]
+    G --> H
+    H --> I[Cross-encoder rerank<br/>ms-marco-MiniLM-L-6-v2]
+    I --> J[LLM answer with citations]
 ```
 
-## Why it's built this way (the parts worth understanding, not memorizing)
+| Stage | File | Notes |
+|---|---|---|
+| Parsing | `app/document_processor.py` | PDF text per page, so every chunk keeps `source` and `page` metadata |
+| Chunking | `app/chunking.py` | Hand-written recursive splitter: paragraphs, then lines, sentences, words |
+| Embeddings | `app/embeddings.py` | Local sentence-transformers model, no API cost |
+| Vector store | `app/vector_store.py` | ChromaDB wrapper, dense search, RRF fusion, reranking |
+| Keyword search | `app/keyword_search.py` | In-memory BM25 rebuilt from ChromaDB when chunks change |
+| Reranker | `app/reranker.py` | Cross-encoder rescoring of the fused shortlist |
+| LLM layer | `app/llm.py` | Groq/Ollama (any OpenAI-compatible endpoint), OpenAI, Anthropic, or raw-context fallback |
+| API | `app/main.py` | `POST /api/ingest`, `POST /api/query`, `GET /api/health`, demo UI at `/` |
 
-- **Chunking is hand-rolled, not imported from LangChain.** `app/chunking.py`
-  is a recursive character splitter: try paragraph breaks, then sentences,
-  then words, then raw characters, whichever keeps pieces under the size
-  limit while preserving as much semantic unity as possible. Overlap between
-  chunks stops facts from being severed exactly at a chunk boundary.
-- **Embeddings are local (sentence-transformers), not an API call.**
-  Embeddings run on every chunk at ingest time and every query at search
-  time — that's the highest-volume part of the system, so it's the part
-  most worth keeping free and fast. It also decouples retrieval quality
-  from which chat LLM you use.
-- **The LLM layer is provider-agnostic.** `app/llm.py` dispatches to
-  Anthropic or OpenAI based on config, and — deliberately — has a
-  no-API-key fallback that returns the raw retrieved context instead of
-  crashing. That's what lets `tests/test_pipeline.py` verify the entire
-  retrieval pipeline (parsing, chunking, embedding, vector search) without
-  needing a paid API key.
-- **Citations are structural, not hoped-for.** Every chunk carries
-  `{source filename, page number}` metadata from the moment it's parsed,
-  all the way through embedding and storage, so the API response always
-  returns a deduplicated source list alongside the answer — not just an
-  LLM claiming to have cited something.
+Why hybrid retrieval: dense search handles paraphrase but can miss exact tokens (commands, IDs, names); BM25 does the reverse. Reciprocal Rank Fusion merges the two ranked lists using rank position only, so the two score scales never need normalizing. The cross-encoder then reads the question and each candidate together, which is more precise than comparing two separately computed vectors, but too slow to run over the whole corpus, so it only rescores the shortlist.
 
-## Project layout
+## Evaluation
 
-```
-enterprise_rag/
-├── app/
-│   ├── config.py            # all tunable settings, env-var driven
-│   ├── chunking.py          # recursive text splitter
-│   ├── document_processor.py# pdf/docx/txt parsing -> Chunk objects
-│   ├── embeddings.py        # local embedding model (+ offline fallback)
-│   ├── vector_store.py      # ChromaDB wrapper
-│   ├── llm.py                # Anthropic/OpenAI dispatch + citation prompt
-│   ├── rag_engine.py         # ties retrieval + generation together
-│   └── main.py                # FastAPI routes
-├── static/index.html          # minimal upload + ask UI, served at /
-├── tests/
-│   ├── test_chunking.py
-│   └── test_pipeline.py       # ingest->retrieve->answer, no API key needed
-├── requirements.txt
-├── .env.example
-└── pytest.ini
-```
+Retrieval is evaluated with **no LLM involved**, so results are cheap to reproduce and not affected by the answer model.
 
-## Setup
+- **Corpus:** one document, a MySQL handbook PDF (82 chunks)
+- **Questions:** 50 labeled questions (`eval/eval_questions.json`), plus 5 deliberately unanswerable ones used to check that the model says "I don't know"
+- **Labels:** each question has a `must_contain` phrase copied from the passage that answers it; a retrieved chunk counts as relevant if it contains that phrase
+- **Metrics:** Hit@k (a relevant chunk is in the top k) and MRR (mean of 1 / rank of the first relevant chunk). Each question has one label, so Recall@k equals Hit@k.
 
-```bash
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env
-# edit .env: set ANTHROPIC_API_KEY (or OPENAI_API_KEY + LLM_PROVIDER=openai)
-# leave both blank to run in fallback mode — everything works except
-# the final answer is raw context instead of an LLM-written response
-```
-
-## Run
-
-```bash
-uvicorn app.main:app --reload
-```
-
-- UI: http://127.0.0.1:8000/
-- Interactive API docs: http://127.0.0.1:8000/docs
-
-Upload a `.pdf`, `.docx`, `.txt`, or `.md` file in the UI, then ask a
-question about it — you'll get an answer with `(source, page)` citations.
-
-## Test
-
-```bash
-pytest -v
-```
-
-Six tests, all runnable offline: chunking correctness (size limits, overlap,
-empty input) and a full ingest → embed → store → retrieve → answer
-integration test that works even with no LLM key configured.
-
-## Hybrid search, reranking, and eval (new)
-
-Retrieval is now a four-stage pipeline instead of plain vector search — see
-the architecture diagram above. Toggle each stage independently in `.env`:
-
-```
-hybrid_enabled=true      # dense + BM25, merged with Reciprocal Rank Fusion
-rerank_enabled=true      # cross-encoder re-scores the merged shortlist
-hybrid_candidate_k=20    # how many candidates each retriever contributes
-rrf_k=60                 # RRF damping constant (60 is the standard default)
-rerank_model_name=cross-encoder/ms-marco-MiniLM-L-6-v2
-```
-
-Why both matter: dense (vector) search is strong on paraphrase and weak on
-exact terms it wasn't trained to weight (IDs, names, acronyms); BM25 keyword
-search is the reverse. Reciprocal Rank Fusion combines their two ranked
-lists without needing to normalize dense cosine-distance against BM25's
-unbounded term-frequency scale — only rank position matters. The
-cross-encoder reranker then re-scores the merged shortlist by feeding the
-question and each chunk into one model *together*, which is far more
-precise than comparing two independently-computed embeddings — but too slow
-to run over the whole corpus, which is why it only touches the shortlist.
-
-**To measure whether any of this actually helped:** `eval/run_eval.py` runs
-your real pipeline against `eval/eval_questions.json` and scores it with
-[Ragas](https://github.com/explodinggradients/ragas) on Faithfulness
-(anti-hallucination), Answer Relevancy, and Context Precision (retrieval
-quality specifically). Replace the example questions with real ones about
-your documents, ingest those documents first, then:
-
-```bash
-python -m eval.run_eval
-```
-
-This writes `eval/eval_report.md` with per-question and averaged scores.
-Turn `hybrid_enabled` / `rerank_enabled` off, rerun, and compare
-Context Precision before/after — that comparison, with real numbers, is a
-far stronger project artifact than "I added hybrid search."
-
-## Running without paid API keys (Ollama or Groq) and evaluating offline
-
-Only the answer-writing LLM was ever paid. Embeddings (`all-MiniLM-L6-v2`), the
-reranker, ChromaDB and BM25 already run locally for free.
-
-**Free hosted option (Groq):** make a free key at [console.groq.com](https://console.groq.com) and set in `.env`:
-
-```dotenv
-LLM_PROVIDER=ollama          # the name is historical: it means "any OpenAI-compatible endpoint"
-OLLAMA_BASE_URL=https://api.groq.com/openai/v1
-OLLAMA_API_KEY=your_groq_key
-OLLAMA_MODEL=openai/gpt-oss-120b     # pick an exact name from Groq's model list
-OLLAMA_MAX_TOKENS=2000               # reasoning models need more output budget
-```
-
-Free tiers are rate-limited and the model list changes. The same settings work for OpenRouter or LM Studio.
-
-
-**Generate answers locally.** Install [Ollama](https://ollama.com), run
-`ollama pull llama3.2:3b`, then in `.env` set `LLM_PROVIDER=ollama`. The app
-talks to Ollama through its OpenAI-compatible endpoint (`OLLAMA_BASE_URL`),
-so any OpenAI-compatible server works. On a CPU-only laptop expect slow answers.
-
-**Evaluate retrieval with no LLM at all:**
-
-```bash
-python -m eval.retrieval_eval            # writes eval/retrieval_report.md
-```
-
-Label questions in `eval/eval_questions.json` with `must_contain` (a phrase
-from the answering passage) or `relevant_pages`. The report compares
-dense-only, BM25-only, hybrid (RRF) and hybrid + cross-encoder rerank on
-Hit@k, Recall@k and MRR.
-
-**Evaluate answer quality with Ragas, with a separate judge:**
-
-```bash
-python -m eval.run_eval                                   # generate + judge
-python -m eval.run_eval --reuse-samples                   # re-judge saved answers
-python -m eval.run_eval --metrics faithfulness,context_precision
-```
-
-The generator (`LLM_PROVIDER`) and the judge (`JUDGE_PROVIDER`) are separate:
-generate locally, judge with a stronger model. Both are written into
-`eval/eval_report.md`; always state which judge produced your scores.
-
-Generation is resumable: if a hosted API rate-limits mid-run, finished answers
-are kept in `eval/samples_partial.json` and the same command continues from there.
-The contexts given to Ragas include the `[Source, Page]` headers the generator saw,
-so page citations in answers can be checked against them.
-
-**Debugging retrieval misses:**
-
-```bash
-python -m eval.diagnose_misses --k 5     # why each missed question missed
-python -m eval.reingest "path/to/doc.pdf"   # wipe + re-index with current .env settings
-```
-
-Label matching ignores whitespace, because PDF extraction inserts stray spaces
-(`AVG (salary)`), which would otherwise cause false misses.
-
-## Results
-
-Retrieval benchmark (`python -m eval.retrieval_eval`, no LLM), 50 labeled
-questions over a MySQL handbook PDF:
-
-| Config | hit@1 | hit@3 | hit@5 | MRR |
+| Retrieval | Hit@1 | Hit@3 | Hit@5 | MRR |
 |---|---|---|---|---|
-| dense | 0.60 | 0.88 | 0.96 | 0.74 |
-| bm25 | 0.50 | 0.86 | 0.86 | 0.66 |
-| hybrid (RRF) | 0.66 | 0.86 | 0.94 | 0.77 |
-| hybrid + rerank | 0.74 | 0.94 | 0.96 | 0.83 |
+| Dense only | 0.60 | 0.88 | 0.96 | 0.74 |
+| BM25 only | 0.50 | 0.86 | 0.86 | 0.66 |
+| Hybrid (RRF) | 0.66 | 0.86 | 0.94 | 0.77 |
+| **Hybrid + rerank** | **0.74** | **0.94** | **0.96** | **0.83** |
 
-Reranking mainly improves ordering (hit@1, MRR); hit@5 is already near the
-ceiling for dense search on this corpus. The question set is small and from a
-single document, so treat these as indicative rather than general.
+Full report: [`eval/retrieval_report.md`](eval/retrieval_report.md).
 
-## Extending it further (good next steps if you want to keep learning)
+**How to read this**
 
-- Swap ChromaDB for pgvector/Qdrant by only touching `vector_store.py`.
-- Add streaming responses (`stream=True` on the Anthropic/OpenAI call) for
-  a token-by-token UI.
-- Add contextual retrieval: prepend a short LLM-generated document summary
-  to each chunk before embedding it, so a chunk carries context beyond its
-  own boundaries — a solid next upgrade to `chunking.py`.
-- Add adaptive routing: classify each question's complexity first, and only
-  trigger multi-hop/agentic retrieval for the questions that actually need
-  it, instead of running every question through the same fixed pipeline.
-- Add auth (API key or OAuth) in front of `/api/ingest` before deploying
-  anywhere real — right now anyone who can reach the server can index files.
-- Track ingest provenance (who uploaded what, when) in a small SQLite table
-  alongside the vector store.
+- Reranking mainly improves the *ordering*: Hit@1 goes from 0.60 to 0.74 and MRR from 0.74 to 0.83 versus dense-only.
+- Hit@5 is already near its ceiling for dense search on this corpus (0.96), so the pipeline does not add recall there. Hybrid without reranking was not better than dense on Hit@3 or Hit@5.
+- The set is small and comes from a single document, so differences of a few points are within noise. Treat the numbers as indicative, not general.
+- Label matching ignores whitespace, because PDF extraction inserts stray spaces and line breaks. An earlier run without this undercounted hits for every configuration, so its numbers are superseded.
+- Questions were written from the document's own wording, which favors keyword matching. Real user questions are usually vaguer.
+
+Reproduce:
+
+```bash
+python -m eval.retrieval_eval          # writes eval/retrieval_report.md
+```
+
+Answer quality can also be scored with [Ragas](https://github.com/explodinggradients/ragas) (faithfulness, answer relevancy, context precision), with the answer model and the judge model configured separately:
+
+```bash
+python -m eval.run_eval                       # generate answers, then judge
+python -m eval.run_eval --reuse-samples       # re-judge saved answers
+```
+
+## Quick start
+
+**Requirements:** Python **3.11 or 3.12** (3.13 is not supported by the pinned dependencies), internet access on first run to download the embedding and reranker models.
+
+```bash
+git clone https://github.com/arsheen2244/verity-ai-knowledge-assistant.git
+cd verity-ai-knowledge-assistant
+
+python -m venv .venv
+# Windows:  .venv\Scripts\activate        macOS/Linux:  source .venv/bin/activate
+python -m pip install -r requirements.txt
+
+cp .env.example .env        # Windows: copy .env.example .env
+# edit .env to choose an LLM provider (see below)
+
+python -m uvicorn app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000> for the UI or <http://127.0.0.1:8000/docs> for the API docs. Upload a document, then ask a question.
+
+> Start the server with `python -m uvicorn` so it uses the active environment's packages. If you use conda alongside a virtualenv, make sure only one environment is active.
+
+### Choosing an LLM
+
+Set `LLM_PROVIDER` in `.env`:
+
+| Provider | Settings |
+|---|---|
+| Groq (free tier) | `LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL=https://api.groq.com/openai/v1`, `OLLAMA_API_KEY=<key>`, `OLLAMA_MODEL=openai/gpt-oss-120b`, `OLLAMA_MAX_TOKENS=2000` |
+| Local Ollama | `LLM_PROVIDER=ollama`, then `ollama pull llama3.2:3b` and use the defaults in `.env.example` |
+| OpenAI | `LLM_PROVIDER=openai`, `OPENAI_API_KEY=<key>` |
+| Anthropic | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=<key>` |
+| None | `LLM_PROVIDER=none` returns the raw retrieved context |
+
+The `ollama` provider name is historical: it means any OpenAI-compatible endpoint. Never commit your `.env`; it is listed in `.gitignore`.
+
+### Retrieval settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 800 / 120 | Characters per chunk and overlap between chunks |
+| `TOP_K` | 4 | Chunks passed to the LLM |
+| `HYBRID_ENABLED` | true | Dense + BM25 with Reciprocal Rank Fusion |
+| `HYBRID_CANDIDATE_K` | 20 | Candidates from each retriever |
+| `RERANK_ENABLED` | true | Cross-encoder rescoring of the shortlist |
+
+Turn `HYBRID_ENABLED` and `RERANK_ENABLED` off and rerun the evaluation to compare configurations on your own documents.
+
+## API
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/ingest` | Multipart file upload; returns chunks indexed and total chunks in the store |
+| `POST /api/query` | `{"question": "...", "top_k": 4}` returns `answer`, deduplicated `sources`, `retrieved_chunks` |
+| `GET /api/health` | Status and number of indexed chunks |
+
+## Tests
+
+```bash
+pytest -q
+```
+
+Covers chunking, Reciprocal Rank Fusion, the retrieval metrics, and an offline ingest-to-answer pipeline test that needs no API key.
+
+## Known limitations
+
+- **Single-document evaluation.** Results have not been checked on other document types or larger corpora.
+- **Chunk size is approximate.** Overlap is added after splitting, so chunks can exceed `CHUNK_SIZE`, and overlaps can begin mid-word.
+- **Page granularity.** Chunks never span pages, and `.docx`, `.txt` and `.md` files are all reported as page 1. Tables and images are not extracted.
+- **Citations are model-written.** The `sources` list is the set of retrieved chunks, not a verified list of the chunks the answer actually used.
+- **Fallback modes.** If the embedding or reranker model cannot load (for example, no network), the app falls back to hashed embeddings or skips reranking, with a warning in the log. Do not query an index built in a different mode.
+- **No authentication** on `/api/ingest`; do not expose the server publicly as is.
+- **Single process.** The BM25 index lives in memory, so multiple server workers would not see each other's new uploads.
+
+## Roadmap
+
+- Verify that cited pages appear in the retrieved chunks
+- Relevance threshold from the rerank score, so off-topic questions retrieve nothing
+- Evaluation on more documents and question styles
+- Streaming responses and upload authentication

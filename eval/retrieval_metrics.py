@@ -35,7 +35,11 @@ def build_targets(item: dict) -> list[Target]:
 def target_matches(hit: dict, target: Target) -> bool:
     if target[0] == "page":
         return os.path.basename(str(hit.get("source", ""))).lower() == target[1] and int(hit.get("page", -1)) == target[2]
-    return target[1] in str(hit.get("text", "")).lower()
+    # PDF extraction inserts stray spaces/newlines ("AVG (salary)", "'Female' ,'Other'"),
+    # so a phrase copied from the PDF viewer rarely matches byte-for-byte.
+    # Compare with all whitespace removed so labels don't miss for formatting reasons.
+    squash = lambda s: "".join(str(s).lower().split())  # noqa: E731
+    return squash(target[1]) in squash(hit.get("text", ""))
 
 
 def score_ranking(hits: list[dict], targets: list[Target], ks: list[int]) -> dict:

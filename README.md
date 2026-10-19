@@ -223,6 +223,37 @@ The generator (`LLM_PROVIDER`) and the judge (`JUDGE_PROVIDER`) are separate:
 generate locally, judge with a stronger model. Both are written into
 `eval/eval_report.md`; always state which judge produced your scores.
 
+Generation is resumable: if a hosted API rate-limits mid-run, finished answers
+are kept in `eval/samples_partial.json` and the same command continues from there.
+The contexts given to Ragas include the `[Source, Page]` headers the generator saw,
+so page citations in answers can be checked against them.
+
+**Debugging retrieval misses:**
+
+```bash
+python -m eval.diagnose_misses --k 5     # why each missed question missed
+python -m eval.reingest "path/to/doc.pdf"   # wipe + re-index with current .env settings
+```
+
+Label matching ignores whitespace, because PDF extraction inserts stray spaces
+(`AVG (salary)`), which would otherwise cause false misses.
+
+## Results
+
+Retrieval benchmark (`python -m eval.retrieval_eval`, no LLM), 50 labeled
+questions over a MySQL handbook PDF:
+
+| Config | hit@1 | hit@3 | hit@5 | MRR |
+|---|---|---|---|---|
+| dense | 0.60 | 0.88 | 0.96 | 0.74 |
+| bm25 | 0.50 | 0.86 | 0.86 | 0.66 |
+| hybrid (RRF) | 0.66 | 0.86 | 0.94 | 0.77 |
+| hybrid + rerank | 0.74 | 0.94 | 0.96 | 0.83 |
+
+Reranking mainly improves ordering (hit@1, MRR); hit@5 is already near the
+ceiling for dense search on this corpus. The question set is small and from a
+single document, so treat these as indicative rather than general.
+
 ## Extending it further (good next steps if you want to keep learning)
 
 - Swap ChromaDB for pgvector/Qdrant by only touching `vector_store.py`.

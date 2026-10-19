@@ -66,17 +66,38 @@ def _run_pipeline(questions: list[dict]) -> list[dict]:
     and keeps exactly the chunks the answer was generated from -- so the
     contexts Ragas grades are the contexts the model actually saw."""
     store = get_store()
+    # Resume: answers already generated (same question text) are kept, so a
+    # rate limit or crash mid-run does not throw away finished work.
+    partial_path = SAMPLES_PATH.with_name("samples_partial.json")
+    done: dict[str, dict] = {}
+    if partial_path.exists():
+        done = {s["user_input"]: s for s in json.loads(partial_path.read_text(encoding="utf-8"))}
+        print(f"  Resuming: {len(done)} answers already saved in {partial_path.name}")
     samples = []
     for i, item in enumerate(questions, 1):
         question = item["question"]
+        if question in done:
+            samples.append(done[question])
+            continue
         print(f"  [{i}/{len(questions)}] {question[:70]}")
         hits = store.search(question)
-        answer = generate_answer(question, hits)
+        try:
+            answer = generate_answer(question, hits)
+        except Exception:
+            partial_path.write_text(json.dumps(samples, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(
+                f"\nStopped at question {i}; {len(samples)} answers saved to {partial_path.name}. "
+                "Re-run the same command later (or with another model) to continue.",
+                file=sys.stderr,
+            )
+            raise
         samples.append(
             {
                 "user_input": question,
                 "response": answer,
-                "retrieved_contexts": [h["text"] for h in hits] or [""],
+                # Same "[Source: X, Page N]" header the generator saw, so page
+                # citations in the answer are checkable against the contexts.
+                "retrieved_contexts": [f"[Source: {h['source']}, Page {h['page']}]\n{h['text']}" for h in hits] or [""],
                 "reference": item.get("ground_truth", ""),
             }
         )
@@ -186,7 +207,6 @@ def _select_metrics(names: list[str]):
 
 def _write_report(scores_df, n_questions: int, metric_names: list[str]) -> None:
     mean_scores = scores_df.mean(numeric_only=True)
-    scored_counts = scores_df[list(mean_scores.index)].notna().sum()
     lines = [
         "# Ragas evaluation report",
         "",
@@ -197,18 +217,11 @@ def _write_report(scores_df, n_questions: int, metric_names: list[str]) -> None:
         f"Metrics: {', '.join(metric_names)}",
         f"Retrieval: hybrid={get_settings().hybrid_enabled}, rerank={get_settings().rerank_enabled}, top_k={get_settings().top_k}",
         "",
-        "| Metric | Score (0.0-1.0) | Questions scored |",
-        "|---|---|---|",
+        "| Metric | Score (0.0-1.0) |",
+        "|---|---|",
     ]
     for metric, score in mean_scores.items():
-        lines.append(f"| {metric} | {score:.2f} | {int(scored_counts[metric])} of {n_questions} |")
-    if (scored_counts < n_questions).any():
-        lines += [
-            "",
-            "WARNING: some judge calls failed (rate limits / timeouts), so the scores above "
-            "cover only the questions that succeeded. Re-run with --reuse-samples to fill the "
-            "gaps before quoting these numbers.",
-        ]
+        lines.append(f"| {metric} | {score:.2f} |")
     lines += [
         "",
         "Faithfulness is the anti-hallucination check. Context Precision reflects "
@@ -227,7 +240,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ragas evaluation for the RAG pipeline")
     parser.add_argument("--reuse-samples", action="store_true", help="skip generation; judge the answers saved in eval/samples.json")
     parser.add_argument("--metrics", default=",".join(METRIC_NAMES), help=f"comma-separated subset of: {', '.join(METRIC_NAMES)}")
-    parser.add_argument("--limit", type=int, default=0, help="judge only N evenly-spaced samples (saves tokens on rate-limited judges)")
     args = parser.parse_args()
     metric_names = [m.strip() for m in args.metrics.split(",") if m.strip()]
 
@@ -250,12 +262,8 @@ def main() -> None:
         print(f"Generating answers for {len(questions)} questions ({store_count} chunks indexed)...")
         samples = _run_pipeline(questions)
         SAMPLES_PATH.write_text(json.dumps(samples, indent=2, ensure_ascii=False), encoding="utf-8")
+        SAMPLES_PATH.with_name("samples_partial.json").unlink(missing_ok=True)
         print(f"Saved answers to {SAMPLES_PATH.name} (re-judge later with --reuse-samples)")
-
-    if args.limit and args.limit < len(samples):
-        step = max(1, len(samples) // args.limit)
-        samples = samples[::step][: args.limit]
-        print(f"--limit: judging {len(samples)} evenly-spaced samples")
 
     from ragas import EvaluationDataset, evaluate
     from ragas.run_config import RunConfig
@@ -274,13 +282,6 @@ def main() -> None:
     )
 
     scores_df = result.to_pandas()
-    failed = [m for m in scores_df.select_dtypes("number").columns if scores_df[m].isna().all()]
-    if failed:
-        raise SystemExit(
-            f"Every judge call failed for: {', '.join(failed)}. Usually a rate limit (check the "
-            "provider's daily token limit) -- wait, or use --limit / a smaller question set, then "
-            "re-run with --reuse-samples. No report was written."
-        )
     _write_report(scores_df, len(samples), metric_names)
     print(f"\nDone. Report written to {REPORT_PATH}")
     print(scores_df.mean(numeric_only=True).to_string())

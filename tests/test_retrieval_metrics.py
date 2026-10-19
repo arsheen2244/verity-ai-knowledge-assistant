@@ -42,3 +42,8 @@ def test_aggregate_means():
 def test_empty_targets_rejected():
     with pytest.raises(ValueError):
         score_ranking([_hit("a")], [], [1])
+        
+def test_phrase_match_ignores_whitespace():
+    targets = build_targets({"must_contain": ["AVG(salary)"]})
+    s = score_ranking([_hit("WHERE salary > (SELECT AVG (salary)\nFROM users)")], targets, [1])
+    assert s["hit@1"] == 1.0

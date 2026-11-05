@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     rerank_enabled: bool = True
     rerank_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+    # --- Refusal threshold ---
+    # If the best cross-encoder score among the retrieved chunks is below
+    # this, the app answers "Not found in the documents." without calling the
+    # LLM. None (the default) disables the check. Cross-encoder scores are
+    # unbounded logits, so pick a value by running `python -m eval.refusal_eval`
+    # on your own documents rather than guessing.
+    min_rerank_score: float | None = None
+
     # --- Storage ---
     chroma_persist_dir: str = "./chroma_db"
     collection_name: str = "enterprise_docs"

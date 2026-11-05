@@ -36,10 +36,20 @@ class Source(BaseModel):
     page: int
 
 
+class Grounding(BaseModel):
+    verified: bool
+    citations_found: int
+    unverified_citations: list[str]
+    quotes_found: int
+    unverified_quotes: list[str]
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[Source]
     retrieved_chunks: int
+    refused: bool = False
+    grounding: Grounding | None = None
 
 
 class IngestResponse(BaseModel):

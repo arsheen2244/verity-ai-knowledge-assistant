@@ -84,6 +84,23 @@ python -m eval.run_eval                       # generate answers, then judge
 python -m eval.run_eval --reuse-samples       # re-judge saved answers
 ```
 
+## Guardrails in plain code
+
+The LLM writes the answer; ordinary code decides whether to trust it (`app/grounding.py`).
+
+- **Citation check.** Every `(source, page N)` in the answer must match a chunk that was actually retrieved for that question. Invented pages are listed in `grounding.unverified_citations`.
+- **Quote check.** Any quoted passage in the answer must appear in the retrieved text (whitespace-insensitive). Fabricated quotes are listed in `grounding.unverified_quotes`.
+- **Refusal threshold.** If the best cross-encoder score among the retrieved chunks is below `MIN_RERANK_SCORE`, the API returns "Not found in the documents." without calling the LLM. Disabled by default.
+- **API fields.** `POST /api/query` also returns `refused` and `grounding` (`verified`, counts, and the unverified items).
+
+Choose the threshold from data, not by guessing:
+
+```bash
+python -m eval.refusal_eval     # writes eval/refusal_report.md
+```
+
+It sweeps thresholds over your labeled and unlabeled questions and shows the trade-off between correctly refusing unanswerable questions and wrongly refusing real ones. Set `MIN_RERANK_SCORE` in `.env` once you have picked a value.
+
 ## Quick start
 
 **Requirements:** Python **3.11 or 3.12** (3.13 is not supported by the pinned dependencies), internet access on first run to download the embedding and reranker models.
@@ -129,6 +146,7 @@ The `ollama` provider name is historical: it means any OpenAI-compatible endpoin
 | `HYBRID_ENABLED` | true | Dense + BM25 with Reciprocal Rank Fusion |
 | `HYBRID_CANDIDATE_K` | 20 | Candidates from each retriever |
 | `RERANK_ENABLED` | true | Cross-encoder rescoring of the shortlist |
+| `MIN_RERANK_SCORE` | unset | Refuse without calling the LLM when the best rerank score is below this |
 
 Turn `HYBRID_ENABLED` and `RERANK_ENABLED` off and rerun the evaluation to compare configurations on your own documents.
 
@@ -153,14 +171,17 @@ Covers chunking, Reciprocal Rank Fusion, the retrieval metrics, and an offline i
 - **Single-document evaluation.** Results have not been checked on other document types or larger corpora.
 - **Chunk size is approximate.** Overlap is added after splitting, so chunks can exceed `CHUNK_SIZE`, and overlaps can begin mid-word.
 - **Page granularity.** Chunks never span pages, and `.docx`, `.txt` and `.md` files are all reported as page 1. Tables and images are not extracted.
-- **Citations are model-written.** The `sources` list is the set of retrieved chunks, not a verified list of the chunks the answer actually used.
+- **Citations are model-written.** The `sources` list is the set of retrieved chunks, not a list of the chunks the answer used. The citation check only confirms that cited pages were retrieved, not that they support the claim.
+- **Refusal threshold is uncalibrated by default.** `MIN_RERANK_SCORE` is off until you set it, and the shipped set has only 5 unanswerable questions.
 - **Fallback modes.** If the embedding or reranker model cannot load (for example, no network), the app falls back to hashed embeddings or skips reranking, with a warning in the log. Do not query an index built in a different mode.
 - **No authentication** on `/api/ingest`; do not expose the server publicly as is.
 - **Single process.** The BM25 index lives in memory, so multiple server workers would not see each other's new uploads.
 
 ## Roadmap
 
-- Verify that cited pages appear in the retrieved chunks
-- Relevance threshold from the rerank score, so off-topic questions retrieve nothing
-- Evaluation on more documents and question styles
+- Evaluation on more documents and question styles (a larger corpus, scanned PDFs, tables)
+- More unanswerable questions, then calibrate `MIN_RERANK_SCORE` and report the result
+- Check that each claim is supported by its cited chunk, not just that the page was retrieved
+- Compare chunk sizes and query rewriting for follow-up questions
+- Run the retrieval eval in CI so a drop in Hit@5 fails the build
 - Streaming responses and upload authentication

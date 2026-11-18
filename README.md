@@ -1,4 +1,21 @@
-# Enterprise AI Knowledge Assistant
+<div align="center">
+
+# 🔎 Verity: Enterprise AI Knowledge Assistant
+
+**Ask your documents a question and get an answer that cites the file and page, or an honest "I don't know".**
+
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-5b21b6)
+![sentence-transformers](https://img.shields.io/badge/sentence--transformers-embeddings%20%2B%20rerank-FF9D00?logo=huggingface&logoColor=white)
+![BM25](https://img.shields.io/badge/hybrid-BM25%20%2B%20RRF-0ea5e9)
+![Ragas](https://img.shields.io/badge/eval-Ragas-14b8a6)
+![LLMs](https://img.shields.io/badge/LLM-Groq%20%7C%20Ollama%20%7C%20OpenAI%20%7C%20Claude-blueviolet)
+![MRR](https://img.shields.io/badge/MRR-0.83-2ea44f)
+
+</div>
+
+---
 
 Ask questions about your own documents in plain English and get answers that cite the source file and page.
 
@@ -45,6 +62,17 @@ flowchart LR
 
 Why hybrid retrieval: dense search handles paraphrase but can miss exact tokens (commands, IDs, names); BM25 does the reverse. Reciprocal Rank Fusion merges the two ranked lists using rank position only, so the two score scales never need normalizing. The cross-encoder then reads the question and each candidate together, which is more precise than comparing two separately computed vectors, but too slow to run over the whole corpus, so it only rescores the shortlist.
 
+## 🧰 Tech stack
+
+| Layer | Technology |
+|------|-----------|
+| API | FastAPI, Uvicorn, Pydantic / pydantic‑settings, python‑multipart |
+| Ingestion | pypdf, python‑docx, page‑aware chunking |
+| Retrieval | ChromaDB (dense vectors), rank‑bm25, Reciprocal Rank Fusion, cross‑encoder reranking (sentence‑transformers) |
+| Generation | Pluggable LLM: Groq, Ollama, OpenAI or Anthropic, with tenacity retries. Offline mode returns the raw context |
+| Evaluation | LLM‑free Hit@k / MRR harness, Ragas (answer faithfulness), datasets, tabulate |
+| UI / tests | Static HTML/JS front end, pytest |
+
 ## Evaluation
 
 Retrieval is evaluated with **no LLM involved**, so results are cheap to reproduce and not affected by the answer model.
@@ -62,6 +90,14 @@ Retrieval is evaluated with **no LLM involved**, so results are cheap to reprodu
 | **Hybrid + rerank** | **0.74** | **0.94** | **0.96** | **0.83** |
 
 Full report: [`eval/retrieval_report.md`](eval/retrieval_report.md).
+
+```mermaid
+xychart-beta
+    title "Retrieval quality: Hit@1 by pipeline"
+    x-axis ["Dense", "BM25", "Hybrid (RRF)", "Hybrid + rerank"]
+    y-axis "Hit@1" 0 --> 1
+    bar [0.60, 0.50, 0.66, 0.74]
+```
 
 **How to read this**
 
